@@ -57,16 +57,35 @@
 
 ```sh
 cd recycling-mrf-digital-twin
-npm ci
-npm run dev -- --host 127.0.0.1 --port 5199 --strictPort
+npm install
+npm run dev
 ```
+
+打开终端提示的地址即可（默认 **http://127.0.0.1:5310/**，实际产线在 **/actual.html**）。
 
 以终端实际输出的地址为准；不要直接双击 `index.html`，请用 HTTP 访问。安装依赖需要网络，**安装构建完成后页面运行不需要任何 CDN、在线模型、在线字体或第三方接口**。
 
+> **端口为什么不是 5173**：Windows 上 Hyper-V / WSL / Docker 会整段保留端口（本机保留了 `5141–5240`，导致 Vite 默认的 5173 直接报 `listen EACCES`）。因此把默认端口定在保留区之外的 `5310`（预览 `5311`，实际产线开发 `5320`）。可这样确认本机保留区间：
+>
+> ```powershell
+> netsh interface ipv4 show excludedportrange protocol=tcp
+> ```
+>
+> 若 `5310` 也被占用，用 `npm run dev -- --port 4310` 临时换一个即可。
+
 ```sh
-npm test        # Vitest：仿真不变量、场景几何、整机联动、UI 组件、发布产物自包含
-npm run build   # tsc -b && vite build → dist/
-npm run preview -- --host 127.0.0.1 --port 5200 --strictPort
+npm run typecheck   # vue-tsc -b：含 .vue 单文件组件的完整类型检查
+npm test            # Vitest + @vue/test-utils：仿真不变量、场景几何、整机联动、UI 组件、发布产物自包含
+npm run build       # vue-tsc -b && vite build → dist/
+npm run preview     # 预览构建产物（http://127.0.0.1:5311/）
+```
+
+两个入口的构建与预览：
+
+```sh
+npm run dev:actual     # 实际产线开发服务器（http://127.0.0.1:5320/actual.html）
+npm run build:actual   # 构建到 dist-actual/（需先 npm run build）
+npm run preview:actual # 预览（http://127.0.0.1:5321/actual.html）
 ```
 
 `dist/` 是已提交的静态产物，使用相对 Vite base（`base: './'`），可以直接作为独立站点的根路径，也能挂到任意子路径下（例如放在另一个静态服务的子目录里）。
@@ -89,15 +108,20 @@ npm run preview -- --host 127.0.0.1 --port 5200 --strictPort
 
 ## 技术栈
 
-React 19、TypeScript、Vite 6、Three.js 0.177、React Three Fiber 9、Drei 10、`@react-three/postprocessing` 3（Bloom 与暗角）、Lucide 图标；Vitest 与 Testing Library 用于逻辑、几何与组件回归。全部几何为程序化生成的基础体，纹理由 `scene/textures.ts` 在运行时用 Canvas2D 画出来（混凝土地坪、彩钢瓦、橡胶皮带、纸板、木托盘、警示斜纹、文字贴花），环境光用 three 自带的 `RoomEnvironment` 经 PMREM 预卷积，界面使用系统字体回退——**没有任何外部图片、模型或在线字体**。设备同时给出中文工艺名、英文缩写（如 `NIR-1`）与英文全称，便于对照真实厂区的位号表。
+Vue 3.5（Composition API + `<script setup>`）、TypeScript、Vite 6、Three.js 0.177；Vitest 与 `@vue/test-utils` 用于逻辑、几何与组件回归。三维层直接使用原生 Three.js 命令式 API（由 `scene/SceneHost.ts` 封装渲染器、相机、光照、IBL、拾取与帧循环），不再依赖 React Three Fiber / Drei / postprocessing。
+
+> **重构说明（refactor 分支）**：本项目原以 React 19 + React Three Fiber 实现，现已整体迁移到 Vue 3 Composition API。迁移的取舍与验证结论见 [`docs/REFACTOR_VUE.md`](./docs/REFACTOR_VUE.md)。
+
+全部几何为程序化生成的基础体，纹理由 `scene/textures.ts` 在运行时用 Canvas2D 画出来（混凝土地坪、彩钢瓦、橡胶皮带、纸板、木托盘、警示斜纹、文字贴花），环境光用 three 自带的 `RoomEnvironment` 经 PMREM 预卷积，界面使用系统字体回退——**没有任何外部图片、模型或在线字体**。设备同时给出中文工艺名、英文缩写（如 `NIR-1`）与英文全称，便于对照真实厂区的位号表。
 
 ## 目录结构
 
 ```text
 src/
-  App.tsx                共享时钟、播放/倍速/拖动、选中状态、干预日志、键盘快捷键
+  main.ts                原演示入口：createApp(App).mount(#root)
+  App.vue                共享时钟、播放/倍速/拖动、选中状态、干预日志、键盘快捷键
   types.ts               领域类型：物料、设备、料仓、车辆、叉车、命令、指标
-  simulation/
+  simulation/            纯 TypeScript 仿真核心（不含任何框架依赖，可单独单测）
     data.ts              设备清单、品类与折算质量、料仓容量与阈值、班次时刻表、控制项定义
     prng.ts              种子化随机（mulberry32）——任何路径都不允许 Math.random
     runtime.ts           干预日志求值、电源/效率模型、初始状态构造、物料守恒台账
@@ -105,29 +129,36 @@ src/
     logistics.ts         货车进出货、叉车任务队列、单行主通道互斥、回程归位
     readouts.ts          每台设备的状态与读数、KPI 与分品类统计
     index.ts             定步引擎：createInitialState / stepOnce / stateAtStep / Simulation 时钟
-    context.ts           React 上下文（仅承载时钟实例，不参与仿真逻辑）
+    context.ts           Vue provide/inject：仅承载时钟实例与低频刷新 tick，不参与仿真逻辑
   spatial/layout.ts      全厂统一坐标基准：厂房、月台、皮带锚点、货位、路径航点与主通道
-  scene/                 三维表现层，只读仿真状态
-    MrfScene.tsx         Canvas、三点光与阴影、雾与背景、相机机位与聚焦、后处理、失败提示
-    Environment.tsx      RoomEnvironment + PMREM，程序化环境光（无 HDR 文件）
-    PostFX.tsx           Bloom 与暗角（@react-three/postprocessing）
-    Factory.tsx          沙盘底座、地坪与划线、分区、钢柱、屋面桁架、卷帘门、雨棚、栏杆、灯带
-    Lines.tsx            塑料瓶线 8 台设备、纺织品线 4 台设备、五个料仓、三台打包机、地磅
-    Vehicles.tsx         三辆货车、两台叉车、物料单元、打包块与气吹特效
-    kit.tsx              构件原语：倒角板、方管/圆管、护栏、脚座、电机、百叶、螺栓排、控制柜、状态灯
+  scene/                 三维表现层（原生 Three.js），只读仿真状态
+    SceneHost.ts         渲染器/相机/OrbitControls/三点光/PMREM/拾取/帧循环（替代 <Canvas> 与 useFrame）
+    three.ts             命令式建体工具：group / mesh / box / cylinder / 几何与材质工厂
+    roundedBox.ts        倒角盒几何（替代 drei 的 RoundedBox）
+    Factory.ts           沙盘底座、地坪与划线、分区、钢柱、屋面桁架、卷帘门、雨棚、栏杆、灯带
+    Lines.ts             塑料瓶线 8 台设备、纺织品线 4 台设备、五个料仓、三台打包机、地磅
+    Vehicles.ts          三辆货车、两台叉车、物料单元、打包块与气吹特效
+    kit.ts               构件原语：倒角板、方管/圆管、护栏、脚座、电机、百叶、螺栓排、控制柜、状态灯
     palette.ts           全场景唯一色彩事实源
     materials.ts         表面类型 → roughness / metalness / envMapIntensity
     textures.ts          Canvas2D 程序化贴图：地坪、环氧通道、彩钢瓦、皮带、纸板、木托盘、警示斜纹、文字
     unitPositions.ts     物料在皮带上的位置（与仿真行程 s 同源）
-    parts.tsx            设备外壳（点选与高亮）与皮带变换
+    parts.ts             设备外壳（点选与高亮）与皮带变换
     anchors.ts           每台设备的相机聚焦锚点
   ui/
-    TopBar.tsx           指标摘要、播放与倍速、视角切换、干预模式开关
-    DeviceList.tsx       按产线分组的设备列表与搜索
-    EquipmentPanel.tsx   设备详情、读数、上下游、分层控制、异常开关、干预记录
-    Dashboard.tsx        分品类进出存、料仓水位、搬运任务、近 7 日趋势
-    Timeline.tsx         班次进度、里程碑跳转、事件流
+    MrfScene.vue         挂载 SceneHost、构建场景树、把 Vue 的响应式开关同步到三维层
+    TopBar.vue           指标摘要、播放与倍速、视角切换、干预模式开关
+    DeviceList.vue       按产线分组的设备列表与搜索（分组常量见 deviceList.ts）
+    EquipmentPanel.vue   设备详情、读数、上下游、分层控制、异常开关、干预记录
+    Dashboard.vue        分品类进出存、料仓水位、搬运任务、近 7 日趋势
+    Timeline.vue         班次进度、里程碑跳转、事件流（错行算法见 timelineLayout.ts）
     styles.css           全部界面样式（深色工业风，含窄屏断点）
+  actual/                第二个入口：桐乡实际产线（独立引擎 + 独立场景）
+    main.ts              入口：createApp(ActualApp).mount(#root)
+    ActualApp.vue        面板、参数、时间轴与播放控制
+    ActualScene.vue      加载并批处理 CAD GLB，瓶子/料仓/机械手/打包动画
+    engine.ts            实际产线的独立定步仿真（无框架依赖）
+    process.ts           17 台设备的工艺定义与路径
 tests/                   仿真不变量、干预与清场重放、场景几何、里程碑一致性、整机联动、UI 组件、发布产物自包含
 docs/                    复现规格与发布验证记录
 ```

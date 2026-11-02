@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Group, PerspectiveCamera } from 'three';
 import type { DeviceId } from '../src/types';
 import { DEVICE_SPECS } from '../src/simulation/data';
 import { STEPS_PER_SHIFT, stateAtStep } from '../src/simulation';
@@ -16,6 +17,8 @@ import {
 } from '../src/spatial/layout';
 import { DEVICE_ANCHORS } from '../src/scene/anchors';
 import { beltMesh } from '../src/scene/parts';
+import { buildFactory } from '../src/scene/Factory';
+import { projectToViewport } from '../src/scene/projection';
 import { balePose, unitPose } from '../src/scene/unitPositions';
 
 describe('皮带几何与物料位置', () => {
@@ -130,5 +133,116 @@ describe('场景锚点', () => {
     expect(AISLE.z).toBeLessThan(FACTORY.maxZ - 5);
     // The plastic line and the textile line must not sit on the same band.
     expect(Math.abs(PLANT.sorter1.z - PLANT.hyperspec.z)).toBeGreaterThan(6);
+  });
+});
+
+describe('厂房透视状态', () => {
+  it('构建后立即切到透视：屋顶收起（进入即透视，与顶栏按钮文案一致）', () => {
+    const factory = buildFactory(new Group());
+    // 构建完成时屋顶细节默认可见，等价于实体屋顶。
+    expect(factory.roofDetails.visible).toBe(true);
+
+    // 这是 MrfScene 挂载时的第一个调用：默认 viewMode 就是 xray。
+    factory.setXray(true);
+    expect(factory.roofDetails.visible).toBe(false);
+  });
+
+  it('透视与实体屋顶可以来回切换', () => {
+    const factory = buildFactory(new Group());
+    factory.setXray(true);
+    expect(factory.roofDetails.visible).toBe(false);
+
+    factory.setXray(false);
+    expect(factory.roofDetails.visible).toBe(true);
+
+    factory.setXray(true);
+    expect(factory.roofDetails.visible).toBe(false);
+  });
+
+  it('重复设置同一状态是幂等的，不会误改画面', () => {
+    const factory = buildFactory(new Group());
+    factory.setXray(true);
+    factory.setXray(true);
+    expect(factory.roofDetails.visible).toBe(false);
+
+    factory.setXray(false);
+    factory.setXray(false);
+    expect(factory.roofDetails.visible).toBe(true);
+  });
+
+  it('墙板透明度随模式切换：透视为 0.14，实体为 0.96', () => {
+    const factory = buildFactory(new Group());
+    expect(factory.wallMaterials.length).toBe(4);
+
+    factory.setXray(true);
+    for (const material of factory.wallMaterials) expect(material.opacity).toBeCloseTo(0.14, 6);
+
+    factory.setXray(false);
+    for (const material of factory.wallMaterials) expect(material.opacity).toBeCloseTo(0.96, 6);
+  });
+});
+
+describe('选中设备的名称标签投影', () => {
+  /** 一台正对原点的相机：位置 (0,0,40)，看向 -Z。 */
+  const makeCamera = () => {
+    const camera = new PerspectiveCamera(38, 16 / 9, 0.5, 300);
+    camera.position.set(0, 0, 40);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    return camera;
+  };
+
+  it('原点投影到画布正中', () => {
+    const camera = makeCamera();
+    const projected = projectToViewport([0, 0, 0], camera, 800, 400);
+    expect(projected.visible).toBe(true);
+    expect(projected.x).toBeCloseTo(400, 6);
+    expect(projected.y).toBeCloseTo(200, 6);
+  });
+
+  it('相机上方的点在画布上方，右侧的点在画布右侧', () => {
+    const camera = makeCamera();
+    const above = projectToViewport([0, 5, 0], camera, 800, 400);
+    expect(above.y).toBeLessThan(200); // 屏幕 y 轴向下
+    const right = projectToViewport([10, 0, 0], camera, 800, 400);
+    expect(right.x).toBeGreaterThan(400);
+  });
+
+  it('相机背后的点标记为不可见，避免标签飘到画面另一侧', () => {
+    const camera = makeCamera();
+    const behind = projectToViewport([0, 0, 100], camera, 800, 400);
+    expect(behind.visible).toBe(false);
+  });
+
+  it('视野外（偏离视锥）的点标记为不可见', () => {
+    const camera = makeCamera();
+    const farRight = projectToViewport([500, 0, 0], camera, 800, 400);
+    expect(farRight.visible).toBe(false);
+  });
+
+  it('缩放随距离变化并被夹在可读区间内', () => {
+    const camera = makeCamera();
+    // 近处的物体在屏幕上更大，远处更小（但不会小到看不清）。
+    const near = projectToViewport([0, 0, 30], camera, 800, 400);
+    const far = projectToViewport([0, 0, -120], camera, 800, 400);
+    expect(near.scale).toBeGreaterThan(far.scale);
+    for (const point of [near, far, projectToViewport([0, 0, 0], camera, 800, 400)]) {
+      expect(point.scale).toBeGreaterThanOrEqual(0.75);
+      expect(point.scale).toBeLessThanOrEqual(1.6);
+    }
+  });
+
+  it('每台设备的锚点都能投影出有限坐标', () => {
+    const camera = makeCamera();
+    camera.position.set(37, 32, 43);
+    camera.lookAt(0, 0.4, -3.2);
+    camera.updateMatrixWorld(true);
+    for (const spec of DEVICE_SPECS) {
+      const anchor = DEVICE_ANCHORS[spec.id as DeviceId];
+      const projected = projectToViewport([anchor[0], anchor[1] + 1.9, anchor[2]], camera, 800, 400);
+      expect(Number.isFinite(projected.x), spec.id).toBe(true);
+      expect(Number.isFinite(projected.y), spec.id).toBe(true);
+      expect(Number.isFinite(projected.scale), spec.id).toBe(true);
+    }
   });
 });

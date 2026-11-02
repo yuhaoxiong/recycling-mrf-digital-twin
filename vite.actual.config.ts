@@ -1,13 +1,19 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import vue from '@vitejs/plugin-vue';
 
 // Separate input and output: the original index.html and dist/ keep their existing build.
+// 端口同样避开 Windows 保留区间（见 vite.config.ts 的说明）。
+const DEV_PORT = 5320;
+const PREVIEW_PORT = 5321;
+
 export default defineConfig({
   base: './',
+  server: { port: DEV_PORT, strictPort: true },
+  preview: { port: PREVIEW_PORT, strictPort: true },
   plugins: [
-    react(),
+    vue(),
     {
       name: 'local-cad-assets',
       buildStart() {

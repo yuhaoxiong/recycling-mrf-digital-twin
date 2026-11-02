@@ -218,12 +218,22 @@ fieldset:disabled { opacity: .55; }
 
 /* ---------- 场景内浮层 ---------- */
 .scene-root { position: relative; flex: 1 1 auto; min-height: 0; }
+/* 画布容器必须绝对铺满 .scene-root：不设高度时它的 clientHeight 会是 0，
+   WebGL 画布就拿不到正确尺寸（只能退回默认 300×150），相机宽高比也会错。
+   铺满之后，浮层的 left/top 与画布像素坐标共用同一个原点。 */
+.scene-canvas { position: absolute; inset: 0; overflow: hidden; }
 .zone-label {
   font-size: 10px; color: #9db3bf; white-space: nowrap;
   background: #0e1a20cc; padding: 1px 6px; border-radius: 999px;
 }
 .dock-label { color: #cfe3ec; }
 .device-label {
+  /* 绝对定位在画布之上：left/top 与 scale 由 MrfScene 每帧按三维锚点投影写入，
+     等价于 React 版 drei <Html center distanceFactor> 的跟随效果。 */
+  position: absolute; left: 0; top: 0; z-index: 1;
+  display: none;                 /* 未选中或移出视野时由脚本置 none */
+  transform-origin: 50% 50%;
+  pointer-events: none;          /* 不能挡住画布的点击拾取 */
   font-size: 11px; color: #f1b85c; white-space: nowrap;
   background: #172126ee; padding: 2px 8px; border-radius: 6px; border: 1px solid #f1b85c66;
 }

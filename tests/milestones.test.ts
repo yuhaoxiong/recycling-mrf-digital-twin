@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import type { UnitStage } from '../src/types';
+import type { SimState, UnitStage } from '../src/types';
 import { SHIFT } from '../src/simulation/data';
 import { STEPS_PER_SHIFT, Simulation } from '../src/simulation';
-import { TIMELINE_MILESTONES } from '../src/ui/Timeline';
+import { TIMELINE_MILESTONES } from '../src/ui/timelineLayout';
 
 /** First shift time at which a condition holds, walking the clock exactly as the app does. */
-function firstAt(condition: (time: number, state: ReturnType<Simulation['current']>) => boolean): number {
+function firstAt(condition: (state: SimState) => boolean): number {
   const simulation = new Simulation();
   for (let index = 0; index < STEPS_PER_SHIFT - 1; index += 1) {
     simulation.advanceBy(SHIFT.STEP);
-    if (condition(simulation.timeInShift, simulation.current)) return simulation.timeInShift;
+    if (condition(simulation.current)) return simulation.timeInShift;
   }
   return Number.POSITIVE_INFINITY;
 }
 
-const stageAnywhere = (stages: UnitStage[]) => (time: number, state: ReturnType<Simulation['current']>) =>
+const stageAnywhere = (stages: UnitStage[]) => (state: SimState) =>
   state.units.some((unit) => stages.includes(unit.stage));
 
 describe('时间轴里程碑与实际仿真相符', () => {
@@ -34,8 +34,8 @@ describe('时间轴里程碑与实际仿真相符', () => {
       塑料来料上线: firstAt(stageAnywhere(['INCLINE'])),
       首次光选分选: firstAt(stageAnywhere(['SORTER_1', 'PASS_1', 'SORTER_2', 'PASS_2', 'LANE_PET', 'LANE_HDPE'])),
       纺织来料上线: firstAt(stageAnywhere(['SPREADER'])),
-      首件打包: firstAt((_time, state) => state.bales.length > 0),
-      首件成品装车: firstAt((_time, state) => state.bales.some((bale) => bale.status === 'LOADED')),
+      首件打包: firstAt((state) => state.bales.length > 0),
+      首件成品装车: firstAt((state) => state.bales.some((bale) => bale.status === 'LOADED')),
     };
     for (const [label, actual] of Object.entries(measured)) {
       const milestone = TIMELINE_MILESTONES.find((item) => item.label === label);

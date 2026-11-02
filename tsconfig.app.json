@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "jsxImportSource": "vue",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "esModuleInterop": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "src/main.ts",
+    "src/App.vue",
+    "src/types.ts",
+    "src/simulation/**/*.ts",
+    "src/spatial/**/*.ts",
+    "src/scene/**/*.ts",
+    "src/actual/cad.ts",
+    "src/actual/engine.ts",
+    "src/actual/process.ts",
+    "src/ui/**/*.ts",
+    "src/ui/**/*.vue",
+    "src/*.d.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
+  ],
+  "exclude": ["src/**/*.tsx", "tests/*.tsx"]
+}
